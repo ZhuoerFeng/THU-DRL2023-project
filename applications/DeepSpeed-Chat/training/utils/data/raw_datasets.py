@@ -41,6 +41,47 @@ class PromptRawDataset(object):
 
     def get_prompt_and_rejected(self, sample):
         return
+    
+
+class SafeRLHF(PromptRawDataset):
+    
+    def __init__(self, output_path, seed, local_rank, dataset_name, split=0.1):
+        print(dataset_name)
+        super().__init__(output_path, seed, local_rank, dataset_name)
+        self.dataset_name = "/data/fze/dataset/PKU-SafeRLHF-10K"
+        self.dataset_name_clean = "PKU-SafeRLHF-10K"
+        self.raw = self.raw_datasets['train'].train_test_split(test_size=split)
+        self.train = self.raw['train']
+        self.eval = self.raw['test']
+        
+    def get_train_data(self):
+        return self.train
+    
+    def get_eval_data(self):
+        return self.eval
+
+    def get_prompt(self, sample):
+        return sample['prompt']
+
+    def get_chosen(self, sample):
+        choice = sample['safer_response_id']
+        if choice == 0:
+            return sample['response_0']
+        elif choice == 1:
+            return sample['response_1']
+
+    def get_rejected(self, sample):
+        choice = sample['safer_response_id']
+        if choice == 0:
+            return sample['response_1']
+        elif choice == 1:
+            return sample['response_0']
+
+    def get_prompt_and_chosen(self, sample):
+        return sample['prompt'] + self.get_chosen(sample)
+
+    def get_prompt_and_rejected(self, sample):
+        return sample['prompt'] + self.get_rejected(sample)
 
 
 # English dataset
