@@ -22,6 +22,9 @@ def get_raw_dataset(dataset_name, output_path, seed, local_rank):
     if "Dahoas/rm-static" in dataset_name:
         return raw_datasets.DahoasRmstaticDataset(output_path, seed,
                                                   local_rank, dataset_name)
+    elif "PKU-SafeRLHF-10K" in dataset_name:
+        return raw_datasets.SafeRLHF(output_path, seed,
+                                                  local_rank, dataset_name)
     elif "Dahoas/full-hh-rlhf" in dataset_name:
         return raw_datasets.DahoasFullhhrlhfDataset(output_path, seed,
                                                     local_rank, dataset_name)

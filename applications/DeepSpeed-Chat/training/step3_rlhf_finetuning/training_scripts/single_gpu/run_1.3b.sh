@@ -20,8 +20,12 @@ fi
 mkdir -p $OUTPUT
 
 deepspeed --num_gpus 1 main.py \
+   --data_path /data/fze/dataset/PKU-SafeRLHF-10K  \
+   --data_split 2,4,4 \
    --actor_model_name_or_path $ACTOR_MODEL_PATH --critic_model_name_or_path $CRITIC_MODEL_PATH \
    --actor_zero_stage $ACTOR_ZERO_STAGE --critic_zero_stage $CRITIC_ZERO_STAGE \
    --num_padding_at_beginning 1 --gradient_accumulation_steps 2 \
-   --deepspeed --actor_lora_dim 128 --enable_hybrid_engine --actor_gradient_checkpointing --disable_actor_dropout \
+   --per_device_train_batch_size 1 \
+   --per_device_mini_train_batch_size 1 \
+   --deepspeed --enable_hybrid_engine --actor_gradient_checkpointing --disable_actor_dropout \
    --output_dir $OUTPUT &> $OUTPUT/training.log

@@ -71,7 +71,7 @@ def create_critic_model(model_name_or_path,
         assert os.path.exists(
             model_ckpt_path
         ), f"Cannot find model checkpoint at {model_ckpt_path}"
-        critic_model.load_state_dict(
+        critic_model.rwtranrsformer.load_state_dict(
             torch.load(model_ckpt_path, map_location='cpu'))
 
     return critic_model

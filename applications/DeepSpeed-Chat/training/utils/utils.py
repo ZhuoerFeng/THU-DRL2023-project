@@ -48,7 +48,8 @@ def load_hf_tokenizer(model_name_or_path, fast_tokenizer=True):
         model_json = os.path.join(model_name_or_path, "config.json")
         if os.path.exists(model_json):
             model_json_file = json.load(open(model_json))
-            model_name = model_json_file["_name_or_path"]
+            # model_name = model_json_file["_name_or_path"]
+            model_name = model_name_or_path
             tokenizer = AutoTokenizer.from_pretrained(model_name,
                                                       fast_tokenizer=True)
     else:
