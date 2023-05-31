@@ -41,7 +41,24 @@ class PromptRawDataset(object):
 
     def get_prompt_and_rejected(self, sample):
         return
+
+
+class Alpaca(PromptRawDataset):
     
+    def __init__(self, output_path, seed, local_rank, dataset_name, split=0.1):
+        super().__init__(output_path, seed, local_rank, dataset_name)
+        self.dataset_name = "alpaca"
+        self.dataset_name_clean = "alpaca"
+        self.raw = self.raw_datasets['train'].train_test_split(test_size=split)
+        self.train = self.raw['train']
+        self.eval = self.raw['test']
+
+    def get_train_data(self):
+        return self.train
+    
+    def get_eval_data(self):
+        return self.eval
+
 
 class SafeRLHF(PromptRawDataset):
     
@@ -58,13 +75,15 @@ class SafeRLHF(PromptRawDataset):
         return self.train
     
     def get_eval_data(self):
-        return self.eval
+        return self.train
 
     def get_prompt(self, sample):
         return sample['prompt']
 
     def get_chosen(self, sample):
         choice = sample['safer_response_id']
+        print(choice)
+        print(type(choice))
         if choice == 0:
             return sample['response_0']
         elif choice == 1:
@@ -78,10 +97,10 @@ class SafeRLHF(PromptRawDataset):
             return sample['response_0']
 
     def get_prompt_and_chosen(self, sample):
-        return sample['prompt'] + self.get_chosen(sample)
+        return "###  Speaker 1: " + sample['prompt'] + " ###  Speaker 2: " + self.get_chosen(sample)
 
     def get_prompt_and_rejected(self, sample):
-        return sample['prompt'] + self.get_rejected(sample)
+        return "###  Speaker 1: " + sample['prompt'] + " ###  Speaker 2: " + self.get_rejected(sample)
 
 
 # English dataset

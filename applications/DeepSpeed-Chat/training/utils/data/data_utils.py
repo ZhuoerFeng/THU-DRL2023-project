@@ -18,9 +18,12 @@ from . import raw_datasets
 
 
 def get_raw_dataset(dataset_name, output_path, seed, local_rank):
-
+    print(dataset_name)
     if "Dahoas/rm-static" in dataset_name:
         return raw_datasets.DahoasRmstaticDataset(output_path, seed,
+                                                  local_rank, dataset_name)
+    elif "/data/fze/dataset/alpaca/" in dataset_name:
+        return raw_datasets.Alpaca(output_path, seed,
                                                   local_rank, dataset_name)
     elif "PKU-SafeRLHF-10K" in dataset_name:
         return raw_datasets.SafeRLHF(output_path, seed,
@@ -149,23 +152,37 @@ def create_dataset_split(current_dataset, raw_dataset, train_phase, tokenizer,
     prompt_dataset = []
     chosen_dataset = []
     reject_dataset = []
+    print(train_phase)
     if train_phase == 1:
         for i, tmp_data in enumerate(current_dataset):
             # tokenize the text
-            chosen_sentence = raw_dataset.get_prompt_and_chosen(
-                tmp_data)  # the accept response
-            if chosen_sentence is not None:
-                chosen_sentence += end_of_conversation_token
-                chosen_token = tokenizer(chosen_sentence,
-                                         max_length=max_seq_len,
-                                         padding="max_length",
-                                         truncation=True,
-                                         return_tensors="pt")
-                chosen_token["input_ids"] = chosen_token["input_ids"].squeeze(
-                    0)
-                chosen_token["attention_mask"] = chosen_token[
-                    "attention_mask"].squeeze(0)
-                chosen_dataset.append(chosen_token)
+            instr = tmp_data['instruction']
+            inp = tmp_data['input']
+            answer = tmp_data['output']
+            prompt = 'Below is an instruction that describes a task. Write a response that appropriately completes the request.  ###  Instruction: {instr}  '.format(instr=instr)
+            if len(inp) != 0:
+                prompt += '### Input: {inp}  '.format(inp=inp)
+            prompt += '###  Response: '
+            text = prompt + answer + end_of_conversation_token
+            chosen_token = tokenizer(text,
+                                    max_length=max_seq_len,
+                                    padding="max_length",
+                                    truncation=True,
+                                    return_tensors="pt")
+            prompt_token = tokenizer(prompt,
+                                    max_length=max_seq_len,
+                                    padding='do_not_pad',
+                                    truncation=True,
+                                    return_tensors="pt")
+            chosen_token["input_ids"] = chosen_token["input_ids"].squeeze(
+                0)
+            chosen_token["attention_mask"] = chosen_token[
+                "attention_mask"].squeeze(0)
+            prompt_length = torch.sum(prompt_token['attention_mask'].squeeze(0)) - 1
+            labels = chosen_token["input_ids"].clone()
+            labels[:prompt_length] = -100
+            chosen_token['labels'] = labels
+            chosen_dataset.append(chosen_token)
 
     elif train_phase == 2:
         for i, tmp_data in enumerate(current_dataset):
@@ -222,17 +239,19 @@ def create_dataset(local_rank, dataset_name, data_split, output_path,
                    max_seq_len):
     raw_dataset = get_raw_dataset(dataset_name, output_path, seed, local_rank)
     train_dataset = raw_dataset.get_train_data()
+    print(f'stage 1 {len(train_dataset)}')
     train_index = get_raw_dataset_split_index(local_rank, output_path,
                                               raw_dataset.dataset_name_clean,
                                               seed, "train", data_split,
                                               train_phase - 1,
                                               len(train_dataset))
     train_dataset = Subset(train_dataset, train_index)
+    print(f'stage 2 {len(train_dataset)}')
     train_dataset = create_dataset_split(train_dataset, raw_dataset,
                                          train_phase, tokenizer,
                                          end_of_conversation_token,
                                          max_seq_len)
-
+    print(f'stage 3 {len(train_dataset)}')
     eval_dataset = raw_dataset.get_eval_data()
     eval_index = get_raw_dataset_split_index(local_rank, output_path,
                                              raw_dataset.dataset_name_clean,
@@ -243,6 +262,7 @@ def create_dataset(local_rank, dataset_name, data_split, output_path,
     eval_dataset = create_dataset_split(eval_dataset, raw_dataset, train_phase,
                                         tokenizer, end_of_conversation_token,
                                         max_seq_len)
+    print(f' local rank: {local_rank} raw size : train {len(train_dataset)} eval {len(eval_dataset)}')
     return train_dataset, eval_dataset
 
 
@@ -259,6 +279,7 @@ def create_prompt_dataset(local_rank,
     """
     Creates the prompt dataset
     """
+    print(f"Local rank {local_rank} creating prompt datset ...")
     os.makedirs(output_path, exist_ok=True)
     fname = "_".join(data_path)
     sft_cache_key = "_".join(sft_only_data_path)
@@ -273,9 +294,11 @@ def create_prompt_dataset(local_rank,
     cache_found = os.path.isfile(train_fname) and os.path.isfile(eval_fname)
     buf_create_cache = torch.ByteTensor([not cache_found]).cuda()
     torch.distributed.all_reduce(buf_create_cache)
+    print(f"local rank {local_rank} base args: {train_fname} {cache_found} {data_path} {buf_create_cache.item()}")
 
     if local_rank <= 0 and buf_create_cache.item() != 0:
         if len(data_path) == 1:  # Single dataset.
+            print('len=1')
             train_dataset, eval_dataset = create_dataset(
                 local_rank, data_path[0], data_split, output_path, train_phase,
                 seed, tokenizer, end_of_conversation_token, max_seq_len)
@@ -298,9 +321,10 @@ def create_prompt_dataset(local_rank,
             eval_dataset = ConcatDataset(eval_datasets)
             shuffle_idx = get_shuffle_idx(seed, eval_size)
             eval_dataset = Subset(eval_dataset, shuffle_idx.tolist())
-
+        print(f' local rank: {local_rank} raw size : train {len(train_dataset)} eval {len(eval_dataset)}')
         # Append the SFT-only dataset if it exists, and current phase is 1(SFT).
         if train_phase == 1 and sft_only_data_path:
+            print('there are sft only data path')
             sft_train_datasets = []
             sft_eval_datasets = []
             sft_train_size = 0
@@ -332,10 +356,15 @@ def create_prompt_dataset(local_rank,
                 eval_dataset = ConcatDataset([eval_dataset, sft_eval_dataset])
                 shuffle_idx = get_shuffle_idx(seed, len(eval_dataset))
                 eval_dataset = Subset(eval_dataset, shuffle_idx.tolist())
+        print(f' local rank: {local_rank} raw size : train {len(train_dataset)} eval {len(eval_dataset)}')
         torch.save(train_dataset, train_fname)
         torch.save(eval_dataset, eval_fname)
     torch.distributed.barrier()
-    return torch.load(train_fname), torch.load(eval_fname)
+    train_set = torch.load(train_fname)
+    eval_set = torch.load(eval_fname)
+    print(f' local rank: {local_rank} raw size : train {len(train_set)} eval {len(eval_set)}')
+    return train_set, eval_set
+    
 
 
 class DataCollatorReward:
